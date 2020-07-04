@@ -7,7 +7,7 @@ for wallet clients and legacy RPC applications. It is based on btcwallet
 with some changes necessary to accomondate new Omega chain features, such
 as typed token, geometry objects, etc. Everything else is pretty much
 the same as btcwallet. Therefore, please refer [btcwallet](https://github.com/btcsuite/btcwallet/blob/master/README.md)
-for more detail. 
+for more details. 
 
 ## License
 
