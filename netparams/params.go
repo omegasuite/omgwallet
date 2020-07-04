@@ -18,7 +18,7 @@ type Params struct {
 // btcd on the main network (wire.MainNet).
 var MainNetParams = Params{
 	Params:        &chaincfg.MainNetParams,
-	RPCClientPort: "8834",
+	RPCClientPort: "8789",
 	RPCServerPort: "8832",
 }
 
