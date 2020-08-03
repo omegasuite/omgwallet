@@ -1805,6 +1805,9 @@ func signRawTransaction(icmd interface{}, w *wallet.Wallet, chainClient *chain.R
 			keys = make(map[string]*btcutil.WIF)
 
 			for _, key := range *cmd.PrivKeys {
+				if len(key) == 0 {
+					continue
+				}
 				wif, err := btcutil.DecodeWIF(key)
 				if err != nil {
 					return nil, DeserializationError{err}

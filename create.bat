@@ -1,1 +1,1 @@
-wallet.exe --create /configfile:f:/Btcwallet /appdata:f:/Btcwallet /testnet /logdir:f:/Btcwallet /noclienttls /rpccert:F:\btctest\rpc.cert /rpckey:F:\btctest\rpc.key /noservertls /btcdusername:admin /btcdpassword:rpcpass /username:admin /password:walletpass
+wallet.exe --create /configfile:f:/Btcwallet /appdata:f:/Btcwallet /testnet /logdir:f:/Btcwallet /noclienttls /rpccert:F:\btctest\rpc.cert /rpckey:F:\btctest\rpc.key /noservertls /btcdusername:admin /btcdpassword:123456 /username:admin /password:123456
