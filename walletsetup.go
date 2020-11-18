@@ -122,6 +122,8 @@ func createWallet(cfg *config) error {
 		return err
 	}
 
+	fmt.Println("Your private pass is ...%s...", privPass)
+
 	// When there exists a legacy keystore, unlock it now and set up a
 	// callback to import all keystore keys into the new walletdb
 	// wallet

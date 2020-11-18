@@ -349,16 +349,18 @@ func (w *Wallet) syncWithChain(birthdayStamp *waddrmgr.BlockStamp) error {
 	// If we've yet to find our birthday block, we'll do so now.
 	if birthdayStamp == nil {
 		var err error
-/*
+
 		birthdayStamp, err = locateBirthdayBlock(
 			chainClient, w.Manager.Birthday(),
 		)
-fmt.Printf("locateBirthdayBlock birthdayStamp = %V", birthdayStamp)
+
+		fmt.Printf("locateBirthdayBlock birthdayStamp = %V", birthdayStamp)
+
 		if err != nil {
 			return fmt.Errorf("unable to locate birthday block: %v",
 				err)
 		}
-*/
+
 		// start from genesis
 		birthdayStamp = &waddrmgr.BlockStamp {
 			Height: 0,
@@ -371,25 +373,25 @@ fmt.Printf("locateBirthdayBlock birthdayStamp = %V", birthdayStamp)
 		// arbitrary height, rather than all the blocks from genesis, so
 		// we persist this height to ensure we don't store any blocks
 		// before it.
-//		startHeight := birthdayStamp.Height
+		startHeight := birthdayStamp.Height
 
 		// With the starting height obtained, get the remaining block
 		// details required by the wallet.
-//		startHash, err := chainClient.GetBlockHash(int64(startHeight))
-//		if err != nil {
-//			return err
-//		}
-//		startHeader, err := chainClient.GetBlockHeader(startHash)
-//		if err != nil {
-//			return err
-//		}
+		startHash, err := chainClient.GetBlockHash(int64(startHeight))
+		if err != nil {
+			return err
+		}
+		startHeader, err := chainClient.GetBlockHeader(startHash)
+		if err != nil {
+			return err
+		}
 
 		err = walletdb.Update(w.db, func(tx walletdb.ReadWriteTx) error {
 			ns := tx.ReadWriteBucket(waddrmgrNamespaceKey)
 			err := w.Manager.SetSyncedTo(ns, &waddrmgr.BlockStamp{
-				Hash:      chainhash.Hash{},	// *startHash,
-				Height:    -1,	// startHeight,
-				Timestamp: time.Unix(0, 0), // startHeader.Timestamp,
+				Hash:      *startHash,	// chainhash.Hash{},	// *startHash,
+				Height:    startHeight, // -1,	// startHeight,
+				Timestamp: startHeader.Timestamp,	// time.Unix(0, 0), // startHeader.Timestamp,
 			})
 			if err != nil {
 				return err
@@ -3243,16 +3245,43 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 	ctx := ovm.Context{}
 	ctx.GetCoinBase = func() *btcutil.Tx { return nil }
 	ctx.GetTx = func() *btcutil.Tx { return btcutil.NewTx(tx) }
-	ctx.AddTxOutput = func(t wire.TxOut) bool { return false	}
-	ctx.AddRight = func(t *token.RightDef) bool { return false }
+	ctx.AddTxOutput = func(t wire.TxOut) int { return -1 }
+	ctx.AddRight = func(t token.Definition) chainhash.Hash { return chainhash.Hash{} }
 	ctx.GetUtxo = func(hash chainhash.Hash, seq uint64) *wire.TxOut { return nil }
-//	ctx.GetHash = ovm.GetHash
 	ctx.BlockNumber = func() uint64 { return 0 }
+	ctx.BlockTime = func() uint32 { return 0 }
 	ctx.Block = func() *btcutil.Block { return nil }
 
 	svm := ovm.NewSigVM(w.chainParams)
 	svm.SetContext(ctx)
 	intp := svm.Interpreter()
+
+	signed := make(map[uint32]struct{})
+/*
+	var textmode []byte
+	if hashType == txscript.SigHashAll {
+		textmode = []byte{1}
+	} else if hashType == txscript.SigHashSingle {
+		textmode = []byte{0}
+	} else if hashType == txscript.SigHashAll  | txscript.SigHashAnyOneCanPay {
+		textmode = []byte{2}
+	} else if hashType == txscript.SigHashSingle  | txscript.SigHashAnyOneCanPay {
+		textmode = []byte{3}	// need to add index when met
+	}
+ */
+/*
+	switch hashType {
+	case "ALL":
+	case "NONE":
+		hashType = txscript.SigHashNone
+	case "SINGLE":
+	case "NONE|ANYONECANPAY":
+		hashType = txscript.SigHashNone | txscript.SigHashAnyOneCanPay
+	default:
+		e := errors.New("Invalid sighash parameter")
+		return nil, InvalidParameterError{e}
+	}
+ */
 
 	var signErrors []SignatureError
 	err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
@@ -3260,6 +3289,9 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 		txmgrNs := dbtx.ReadBucket(wtxmgrNamespaceKey)
 
 		for i, txIn := range tx.TxIn {
+			if _,ok := signed[txIn.SignatureIndex]; ok {
+				continue
+			}
 			prevOutScript, ok := additionalPrevScripts[txIn.PreviousOutPoint]
 			if !ok {
 				prevHash := &txIn.PreviousOutPoint.Hash
@@ -3282,15 +3314,16 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 				if len(additionalKeysByAddress) != 0 {
 					addrStr := addr.EncodeAddress()
 					wif, ok := additionalKeysByAddress[addrStr]
-					if !ok {
-						return nil, false,
-							errors.New("no key for address")
+					if ok {
+						return wif.PrivKey, wif.CompressPubKey, nil
 					}
-					return wif.PrivKey, wif.CompressPubKey, nil
+					// if additional key fails, try managed keys
 				}
 				address, err := w.Manager.Address(addrmgrNs, addr)
 				if err != nil {
-					return nil, false, err
+					// allow signing partial tx
+					return nil, false, nil
+//					return nil, false, err
 				}
 
 				pka, ok := address.(waddrmgr.ManagedPubKeyAddress)
@@ -3333,9 +3366,8 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 			// SigHashSingle inputs can only be signed if there's a
 			// corresponding output. However this could be already signed,
 			// so we always verify the output.
-			if (hashType&txscript.SigHashSingle) != txscript.SigHashSingle {	//  || i < len(tx.TxOut)?
-
-				txIn.SignatureIndex = uint32(i)
+			if (hashType&txscript.SigHashMask) < txscript.SigHashSingle || i < len(tx.TxOut) {
+//				txIn.SignatureIndex = uint32(i)
 				if tx.SignatureScripts == nil {
 					tx.SignatureScripts = make([][]byte, 0)
 				}
@@ -3355,7 +3387,8 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 					})
 					continue
 				}
-				tx.SignatureScripts[i] = script
+				tx.SignatureScripts[txIn.SignatureIndex] = script
+				signed[txIn.SignatureIndex] = struct{}{}
 			}
 
 			pkScript := make([]byte, len(prevOutScript) - 1)
@@ -3368,7 +3401,7 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 
 			// Either it was already signed or we just signed it.
 			// Find out if it is completely satisfied or still needs more.
-			if !intp.VerifySig(i, pkScript, tx.SignatureScripts[i]) {
+			if tx.SignatureScripts[txIn.SignatureIndex] != nil && !intp.VerifySig(i, pkScript, tx.SignatureScripts[txIn.SignatureIndex]) {
 				signErrors = append(signErrors, SignatureError{
 					InputIndex: uint32(i),
 					Error:      fmt.Errorf("cannot validate transaction."),

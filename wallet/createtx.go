@@ -289,11 +289,12 @@ func validateMsgTx(tx *wire.MsgTx, prevScripts [][]byte, inputValues []btcutil.A
 	ctx := ovm.Context{}
 	ctx.GetCoinBase = func() *btcutil.Tx { return nil }
 	ctx.GetTx = func() *btcutil.Tx { return btcutil.NewTx(tx) }
-	ctx.AddTxOutput = func(t wire.TxOut) bool { return false	}
-	ctx.AddRight = func(t *token.RightDef) bool { return false }
+	ctx.AddTxOutput = func(t wire.TxOut) int { return -1 }
+	ctx.AddRight = func(t token.Definition) chainhash.Hash { return chainhash.Hash{} }
 	ctx.GetUtxo = func(hash chainhash.Hash, seq uint64) *wire.TxOut { return nil }
 //	ctx.GetHash = ovm.GetHash
 	ctx.BlockNumber = func() uint64 { return 0 }
+	ctx.BlockTime = func() uint32 { return 0	}
 	ctx.Block = func() *btcutil.Block { return nil }
 
 	vm := ovm.NewOVM(nil)

@@ -139,6 +139,7 @@ type Asset struct {
 	wire.OutPoint
 	BlockMeta
 //	Amount       wire.Token
+	Outpoint	 string
 	TokenType    uint64
 	Value 		 int64
 	VHash 		 string
@@ -1037,6 +1038,7 @@ func (s *Store) UnspentAssets(ns walletdb.ReadBucket, detail bool) ([]Asset, err
 				Block: block,
 				Time:  blockTime,
 			},
+			Outpoint: op.String(),
 //			Amount:       txOut.Token,
 			PkScript:     txOut.PkScript,
 			Received:     rec.Received,
@@ -1105,6 +1107,7 @@ func (s *Store) UnspentAssets(ns walletdb.ReadBucket, detail bool) ([]Asset, err
 			BlockMeta: BlockMeta{
 				Block: Block{Height: -1},
 			},
+			Outpoint: op.String(),
 			PkScript:     txOut.PkScript,
 			Received:     rec.Received,
 			FromCoinBase: blockchain.IsCoinBaseTx(&rec.MsgTx),

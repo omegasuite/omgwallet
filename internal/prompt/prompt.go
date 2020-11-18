@@ -119,7 +119,10 @@ func promptPass(reader *bufio.Reader, prefix string, confirm bool) ([]byte, erro
 	prompt := fmt.Sprintf("%s: ", prefix)
 	for {
 		fmt.Print(prompt)
-		pass, err := terminal.ReadPassword(int(os.Stdin.Fd()))
+		spass, err := reader.ReadString('\n')
+		pass := []byte(spass)
+
+//		pass, err := terminal.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			return nil, err
 		}
@@ -134,10 +137,13 @@ func promptPass(reader *bufio.Reader, prefix string, confirm bool) ([]byte, erro
 		}
 
 		fmt.Print("Confirm passphrase: ")
-		confirm, err := terminal.ReadPassword(int(os.Stdin.Fd()))
+		sconfirm, err := reader.ReadString('\n')
+
+//		confirm, err := terminal.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			return nil, err
 		}
+		confirm := []byte(sconfirm)
 		fmt.Print("\n")
 		confirm = bytes.TrimSpace(confirm)
 		if !bytes.Equal(pass, confirm) {

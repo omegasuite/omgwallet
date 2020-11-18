@@ -7,7 +7,9 @@
 package txrules
 
 import (
+	"bytes"
 	"errors"
+	"github.com/omegasuite/btcd/blockchain/indexers"
 	"github.com/omegasuite/omega/ovm"
 
 	//	"github.com/omegasuite/btcd/txscript"
@@ -38,7 +40,7 @@ func GetDustThreshold(scriptSize int, relayFeePerKb btcutil.Amount) btcutil.Amou
 }
 
 func IsUnspendable(pkScript []byte) bool {
-	return len(pkScript) > 0 && pkScript[21] == ovm.OP_PAY2NONE
+	return len(pkScript) > 24 && bytes.Compare(pkScript[21:25], []byte{ovm.OP_PAY2NONE,0,0,0}) == 0
 }
 
 
@@ -55,7 +57,7 @@ func IsDustAmount(amount btcutil.Amount, scriptSize int, relayFeePerKb btcutil.A
 func IsDustOutput(output *wire.TxOut, relayFeePerKb btcutil.Amount) bool {
 	// All other unspendable outputs are considered dust.
 //	if txscript.IsUnspendable(output.PkScript) {
-	if IsUnspendable(output.PkScript) {
+	if IsUnspendable(output.PkScript) || indexers.IsContract(output.PkScript[0]) {
 		return true
 	}
 

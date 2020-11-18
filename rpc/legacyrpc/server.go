@@ -15,6 +15,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -116,15 +117,30 @@ func NewServer(opts *Options, walletLoader *wallet.Loader, listeners []net.Liste
 
 	serveMux.Handle("/", throttledFn(opts.MaxPOSTClients,
 		func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Connection", "close")
-			w.Header().Set("Content-Type", "application/json")
-			r.Close = true
+//			w.Header().Set("Connection", "close")
+//			w.Header().Set("Content-Type", "application/json")
+//			r.Close = true
 
-			if err := server.checkAuthHeader(r); err != nil {
-				log.Warnf("Unauthorized client connection attempt")
-				jsonAuthFail(w)
-				return
+			if r.Method == "OPTIONS" {
+				w.Header().Set("Connection", "keep-alive")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization")
+				r.Close = false
+			} else {
+				w.Header().Set("Connection", "close")
+				w.Header().Set("Content-Type", "application/json")
+				r.Close = true
+
+				if err := server.checkAuthHeader(r); err != nil {
+					log.Warnf("Unauthorized client connection attempt")
+					jsonAuthFail(w)
+					return
+				}
 			}
+
+			if strings.Index(r.RemoteAddr, "127.0.0.1:") == 0 || strings.Index(r.RemoteAddr, "localhost:") == 0 {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+
 			server.wg.Add(1)
 			server.postClientRPC(w, r)
 			server.wg.Done()
@@ -460,6 +476,10 @@ out:
 			}
 
 			switch req.Method {
+			case "shutdownserver":
+				fallthrough
+			case "shutdown":
+				fallthrough
 			case "stop":
 				resp := makeResponse(req.ID,
 					"btcwallet stopping.", nil)
@@ -578,37 +598,44 @@ func (s *Server) postClientRPC(w http.ResponseWriter, r *http.Request) {
 	// processing.  While checking the methods, disallow authenticate
 	// requests, as they are invalid for HTTP POST clients.
 	var req btcjson.Request
-	err = json.Unmarshal(rpcRequest, &req)
-	if err != nil {
-		resp, err := btcjson.MarshalResponse(req.ID, nil, btcjson.ErrRPCInvalidRequest)
-		if err != nil {
-			log.Errorf("Unable to marshal response: %v", err)
-			http.Error(w, "500 Internal Server Error",
-				http.StatusInternalServerError)
-			return
-		}
-		_, err = w.Write(resp)
-		if err != nil {
-			log.Warnf("Cannot write invalid request request to "+
-				"client: %v", err)
-		}
-		return
-	}
-
-	// Create the response and error from the request.  Two special cases
-	// are handled for the authenticate and stop request methods.
 	var res interface{}
 	var jsonErr *btcjson.RPCError
 	var stop bool
-	switch req.Method {
-	case "authenticate":
-		// Drop it.
-		return
-	case "stop":
-		stop = true
-		res = "btcwallet stopping"
-	default:
-		res, jsonErr = s.handlerClosure(&req)()
+
+	if r.Method != "OPTIONS" {
+		err = json.Unmarshal(rpcRequest, &req)
+		if err != nil {
+			resp, err := btcjson.MarshalResponse(req.ID, nil, btcjson.ErrRPCInvalidRequest)
+			if err != nil {
+				log.Errorf("Unable to marshal response: %v", err)
+				http.Error(w, "500 Internal Server Error",
+					http.StatusInternalServerError)
+				return
+			}
+			_, err = w.Write(resp)
+			if err != nil {
+				log.Warnf("Cannot write invalid request request to "+
+					"client: %v", err)
+			}
+			return
+		}
+
+		// Create the response and error from the request.  Two special cases
+		// are handled for the authenticate and stop request methods.
+		switch req.Method {
+		case "authenticate":
+			// Drop it.
+			return
+		case "shutdownserver":
+			fallthrough
+		case "shutdown":
+			fallthrough
+		case "stop":
+			stop = true
+			res = "btcwallet stopping"
+		default:
+			res, jsonErr = s.handlerClosure(&req)()
+		}
 	}
 
 	// Marshal and send.
