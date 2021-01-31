@@ -150,6 +150,9 @@ func (bf *BlockFilterer) FilterTx(tx *wire.MsgTx) bool {
 	// indexes for both external and internal addresses. If a new output is
 	// found, we will add the outpoint to our set of FoundOutPoints.
 	for i, out := range tx.TxOut {
+		if out.IsSeparator() {
+			continue
+		}
 		_, addrs, _, err := txscript.ExtractPkScriptAddrs(
 			out.PkScript, bf.Params,
 		)

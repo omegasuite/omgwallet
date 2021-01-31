@@ -15,8 +15,8 @@ import (
 	"github.com/omegasuite/btcutil/gcs/builder"
 	"github.com/omegasuite/omgwallet/waddrmgr"
 	"github.com/omegasuite/omgwallet/wtxmgr"
-	"github.com/lightninglabs/neutrino"
-	"github.com/lightninglabs/neutrino/headerfs"
+	"github.com/omegasuite/neutrino"
+	"github.com/omegasuite/neutrino/headerfs"
 	"github.com/omegasuite/btcd/txscript"
 )
 

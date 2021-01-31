@@ -85,7 +85,7 @@ func CheckOutput(output *wire.TxOut, relayFeePerKb btcutil.Amount) error {
 	if output.Value.(*token.NumToken).Val < 0 {
 		return ErrAmountNegative
 	}
-	if output.Value.(*token.NumToken).Val > btcutil.MaxSatoshi {
+	if output.Value.(*token.NumToken).Val > btcutil.MaxHao {
 		return ErrAmountExceedsMax
 	}
 	if IsDustOutput(output, relayFeePerKb) {
@@ -103,8 +103,8 @@ func FeeForSerializeSize(relayFeePerKb btcutil.Amount, txSerializeSize int) btcu
 		fee = relayFeePerKb
 	}
 
-	if fee < 0 || fee > btcutil.MaxSatoshi {
-		fee = btcutil.MaxSatoshi
+	if fee < 0 || fee > btcutil.MaxHao {
+		fee = btcutil.MaxHao
 	}
 
 	return fee

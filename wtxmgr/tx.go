@@ -546,6 +546,9 @@ func (s *Store) rollback(ns walletdb.ReadWriteBucket, height int32) error {
 			if blockchain.IsCoinBaseTx(&rec.MsgTx) {
 				op := wire.OutPoint{Hash: rec.Hash}
 				for i, output := range rec.MsgTx.TxOut {
+					if output.IsSeparator() {
+						continue
+					}
 					k, v := existsCredit(ns, &rec.Hash,
 						uint32(i), &b.Block)
 					if v == nil {
@@ -658,6 +661,9 @@ func (s *Store) rollback(ns walletdb.ReadWriteBucket, height int32) error {
 			//
 			// TODO: use a credit iterator
 			for i, output := range rec.MsgTx.TxOut {
+				if output.IsSeparator() {
+					continue
+				}
 				k, v := existsCredit(ns, &rec.Hash, uint32(i),
 					&b.Block)
 				if v == nil {

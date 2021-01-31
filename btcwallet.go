@@ -14,11 +14,11 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/omegasuite/neutrino"
 	"github.com/omegasuite/omgwallet/chain"
 	"github.com/omegasuite/omgwallet/rpc/legacyrpc"
 	"github.com/omegasuite/omgwallet/wallet"
 	"github.com/omegasuite/omgwallet/walletdb"
-	"github.com/lightninglabs/neutrino"
 )
 
 var (
@@ -265,7 +265,7 @@ func readCAFile() []byte {
 func startChainRPC(certs []byte) (*chain.RPCClient, error) {
 	log.Infof("Attempting RPC client connection to %v", cfg.RPCConnect)
 	rpcc, err := chain.NewRPCClient(activeNet.Params, cfg.RPCConnect,
-		cfg.BtcdUsername, cfg.BtcdPassword, certs, cfg.DisableClientTLS, 0)
+		cfg.OmcdUsername, cfg.OmcdPassword, certs, cfg.DisableClientTLS, 0)
 	if err != nil {
 		return nil, err
 	}

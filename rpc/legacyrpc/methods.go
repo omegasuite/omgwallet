@@ -465,7 +465,7 @@ func getBalance(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		}
 		balance = bals.Spendable
 	}
-	return balance.ToBTC(), nil
+	return balance.ToOMC(), nil
 }
 
 // getAsset handles a getasset request by returning the assets for an
@@ -588,7 +588,7 @@ func getInfo(icmd interface{}, w *wallet.Wallet, chainClient *chain.RPCClient) (
 	// TODO(davec): This should probably have a database version as opposed
 	// to using the manager version.
 	info.WalletVersion = int32(waddrmgr.LatestMgrVersion)
-	info.Balance = bal.ToBTC()
+	info.Balance = bal.ToOMC()
 	info.PaytxFee = float64(txrules.DefaultRelayFeePerKb)
 	// We don't set the following since they don't make much sense in the
 	// wallet architecture:
@@ -680,7 +680,7 @@ func getUnconfirmedBalance(icmd interface{}, w *wallet.Wallet) (interface{}, err
 		return nil, err
 	}
 
-	return (bals.Total - bals.Spendable).ToBTC(), nil
+	return (bals.Total - bals.Spendable).ToOMC(), nil
 }
 
 // importPrivKey handles an importprivkey request by parsing
@@ -843,7 +843,7 @@ func getReceivedByAccount(icmd interface{}, w *wallet.Wallet) (interface{}, erro
 	if account == waddrmgr.ImportedAddrAccount {
 		acctIndex = len(results) - 1
 	}
-	return results[acctIndex].TotalReceived.ToBTC(), nil
+	return results[acctIndex].TotalReceived.ToOMC(), nil
 }
 
 // getReceivedByAddress handles a getreceivedbyaddress request by returning
@@ -860,7 +860,7 @@ func getReceivedByAddress(icmd interface{}, w *wallet.Wallet) (interface{}, erro
 		return nil, err
 	}
 
-	return total.ToBTC(), nil
+	return total.ToOMC(), nil
 }
 
 // getTransaction handles a gettransaction request by returning details about
@@ -934,12 +934,15 @@ func getTransaction(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 	if len(details.Debits) == len(details.MsgTx.TxIn) {
 		var outputTotal btcutil.Amount
 		for _, output := range details.MsgTx.TxOut {
+			if output.IsSeparator() {
+				continue
+			}
 			if output.TokenType == 0 {
 				outputTotal += btcutil.Amount(output.Value.(*token.NumToken).Val)
 			}
 		}
 		fee = debitTotal - outputTotal
-		feeF64 = fee.ToBTC()
+		feeF64 = fee.ToOMC()
 	}
 
 	if len(details.Debits) == 0 {
@@ -962,7 +965,7 @@ func getTransaction(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 			// details for transaction outputs, just like
 			// listtransactions (but using the short result format).
 			Category: "send",
-			Amount:   (-debitTotal).ToBTC(), // negative since it is a send
+			Amount:   (-debitTotal).ToOMC(), // negative since it is a send
 			Fee:      &feeF64,
 		}
 		ret.Fee = feeF64
@@ -996,7 +999,7 @@ func getTransaction(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 				Account:  accountName,
 				Address:  address,
 				Category: credCat,
-				Amount:   btcutil.Amount(cred.Amount.Value.(*token.NumToken).Val).ToBTC(),
+				Amount:   btcutil.Amount(cred.Amount.Value.(*token.NumToken).Val).ToOMC(),
 				Vout:     cred.Index,
 			})
 		} else {
@@ -1004,13 +1007,13 @@ func getTransaction(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 				Account:  accountName,
 				Address:  address,
 				Category: credCat,
-				Amount:   0, //btcutil.Amount(cred.Amount.Value.(*token.NumToken).Val).ToBTC(),
+				Amount:   0, //btcutil.Amount(cred.Amount.Value.(*token.NumToken).Val).ToOMC(),
 				Vout:     cred.Index,
 			})
 		}
 	}
 
-	ret.Amount = creditTotal.ToBTC()
+	ret.Amount = creditTotal.ToOMC()
 	return ret, nil
 }
 
@@ -1145,7 +1148,7 @@ func listAccounts(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		return nil, err
 	}
 	for _, result := range results {
-		accountBalances[result.AccountName] = result.AccountBalance.ToBTC()
+		accountBalances[result.AccountName] = result.AccountBalance.ToOMC()
 	}
 	// Return the map.  This will be marshaled into a JSON object.
 	return accountBalances, nil
@@ -1181,7 +1184,7 @@ func listReceivedByAccount(icmd interface{}, w *wallet.Wallet) (interface{}, err
 	for _, result := range results {
 		jsonResults = append(jsonResults, btcjson.ListReceivedByAccountResult{
 			Account:       result.AccountName,
-			Amount:        result.TotalReceived.ToBTC(),
+			Amount:        result.TotalReceived.ToOMC(),
 			Confirmations: uint64(result.LastConfirmation),
 		})
 	}
@@ -1281,7 +1284,7 @@ func listReceivedByAddress(icmd interface{}, w *wallet.Wallet) (interface{}, err
 	for address, addrData := range allAddrData {
 		ret[idx] = btcjson.ListReceivedByAddressResult{
 			Address:       address,
-			Amount:        addrData.amount.ToBTC(),
+			Amount:        addrData.amount.ToOMC(),
 			Confirmations: uint64(addrData.confirmations),
 			TxIDs:         addrData.tx,
 		}
@@ -1762,39 +1765,57 @@ func signRawTransaction(icmd interface{}, w *wallet.Wallet, chainClient *chain.R
 			cmdInputs = *cmd.Inputs
 		}
 		for _, rti := range cmdInputs {
-			inputHash, err := chainhash.NewHashFromStr(rti.Txid)
-			if err != nil {
-				return nil, DeserializationError{err}
+			var inputHash *chainhash.Hash
+			var script []byte
+			var err error
+
+			if len(rti.Txid) > 0 {
+				inputHash, err = chainhash.NewHashFromStr(rti.Txid)
+				if err != nil {
+					return nil, DeserializationError{err}
+				}
 			}
 
-			script, err := decodeHexStr(rti.ScriptPubKey)
-			if err != nil {
-				return nil, err
+			if len(rti.ScriptPubKey) > 0 {
+				script, err = decodeHexStr(rti.ScriptPubKey)
+				if err != nil {
+					return nil, err
+				}
 			}
 
-			// redeemScript is only actually used iff the user provided
-			// private keys. In which case, it is used to get the scripts
-			// for signing. If the user did not provide keys then we always
-			// get scripts from the wallet.
-			// Empty strings are ok for this one and hex.DecodeString will
-			// DTRT.
-			if cmd.PrivKeys != nil && len(*cmd.PrivKeys) != 0 {
+			// RedeemScript is used to get the scripts for signing.
+			if len(rti.RedeemScript) > 0 {
 				redeemScript, err := decodeHexStr(rti.RedeemScript)
 				if err != nil {
 					return nil, err
 				}
 
-				addr, err := btcutil.NewAddressScriptHash(redeemScript,
-					w.ChainParams())
-				if err != nil {
-					return nil, DeserializationError{err}
+				param := w.ChainParams()
+				switch redeemScript[0] {
+				case param.MultiSigAddrID:
+					scriptHash := btcutil.Hash160(redeemScript[1:])
+					addr, err := btcutil.NewAddressMultiSig(scriptHash,
+						w.ChainParams())
+					if err != nil {
+						return nil, DeserializationError{err}
+					}
+					scripts[addr.String()] = redeemScript[1:]
+
+				case param.ScriptHashAddrID:
+					addr, err := btcutil.NewAddressScriptHash(redeemScript[1:],
+						w.ChainParams())
+					if err != nil {
+						return nil, DeserializationError{err}
+					}
+					scripts[addr.String()] = redeemScript[1:]
 				}
-				scripts[addr.String()] = redeemScript
 			}
-			inputs[wire.OutPoint{
-				Hash:  *inputHash,
-				Index: rti.Vout,
-			}] = script
+			if inputHash != nil && script != nil {
+				inputs[wire.OutPoint{
+					Hash:  *inputHash,
+					Index: rti.Vout,
+				}] = script
+			}
 		}
 
 		// Now we go and look for any inputs that we were not provided by
@@ -1962,7 +1983,7 @@ func validateAddress(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		// imported.  However, if it fails for any reason, there is no
 		// further information available, so just set the script type
 		// a non-standard and break out now.
-		class, addrs, reqSigs, err := txscript.ExtractPkScriptAddrs(
+		class, addrs, _, err := txscript.ExtractPkScriptAddrs(
 			script, w.ChainParams())
 		if err != nil {
 			result.Script = txsparser.NonStandardTy.String()
@@ -1978,9 +1999,9 @@ func validateAddress(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		// Multi-signature scripts also provide the number of required
 		// signatures.
 		result.Script = class.String()
-		if class == txsparser.MultiSigTy {
-			result.SigsRequired = int32(reqSigs)
-		}
+//		if class == txsparser.MultiSigTy {
+//			result.SigsRequired = int32(reqSigs)
+//		}
 	}
 
 	return result, nil
@@ -2005,7 +2026,7 @@ func verifyMessage(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 	// Validate the signature - this just shows that it was valid at all.
 	// we will compare it with the key next.
 	var buf bytes.Buffer
-	common.WriteVarString(&buf, 0, "Bitcoin Signed Message:\n")
+	common.WriteVarString(&buf, 0, "Omega Signed Message:\n")
 	common.WriteVarString(&buf, 0, cmd.Message)
 	expectedMessageHash := chainhash.DoubleHashB(buf.Bytes())
 	pk, wasCompressed, err := btcec.RecoverCompact(btcec.S256(), sig,

@@ -116,6 +116,9 @@ func makeTxSummary(dbtx walletdb.ReadTx, w *Wallet, details *wtxmgr.TxDetails) T
 			}
 		}
 		for _, txOut := range details.MsgTx.TxOut {
+			if txOut.IsSeparator() {
+				continue
+			}
 			if txOut.TokenType == 0 {
 				fee -= btcutil.Amount(txOut.Value.(*token.NumToken).Val)
 			}

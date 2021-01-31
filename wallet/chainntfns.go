@@ -288,6 +288,9 @@ func (w *Wallet) addRelevantTx(dbtx walletdb.ReadWriteTx, rec *wtxmgr.TxRecord, 
 	// Check every output to determine whether it is controlled by a wallet
 	// key.  If so, mark the output as a credit.
 	for i, output := range rec.MsgTx.TxOut {
+		if output.IsSeparator() {
+			continue
+		}
 		_, addrs, _, err := txscript.ExtractPkScriptAddrs(output.PkScript,
 			w.chainParams)
 		if err != nil {

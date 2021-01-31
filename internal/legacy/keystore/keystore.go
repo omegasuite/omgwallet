@@ -606,7 +606,7 @@ func New(dir string, desc string, passphrase []byte, net *chaincfg.Params,
 	copy(s.desc[:], []byte(desc))
 
 	// Create new root address from key and chaincode.
-	root, err := newRootBtcAddress(s, rootkey, nil, chaincode,
+	root, err := newRootOmcAddress(s, rootkey, nil, chaincode,
 		createdAt)
 	if err != nil {
 		return nil, err
@@ -1017,7 +1017,7 @@ func (s *Store) NextChainedAddress(bs *BlockStamp) (btcutil.Address, error) {
 }
 
 func (s *Store) nextChainedAddress(bs *BlockStamp) (btcutil.Address, error) {
-	addr, err := s.nextChainedBtcAddress(bs)
+	addr, err := s.nextChainedOmcAddress(bs)
 	if err != nil {
 		return nil, err
 	}
@@ -1030,7 +1030,7 @@ func (s *Store) ChangeAddress(bs *BlockStamp) (btcutil.Address, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	addr, err := s.nextChainedBtcAddress(bs)
+	addr, err := s.nextChainedOmcAddress(bs)
 	if err != nil {
 		return nil, err
 	}
@@ -1041,7 +1041,7 @@ func (s *Store) ChangeAddress(bs *BlockStamp) (btcutil.Address, error) {
 	return addr.Address(), nil
 }
 
-func (s *Store) nextChainedBtcAddress(bs *BlockStamp) (*btcAddress, error) {
+func (s *Store) nextChainedOmcAddress(bs *BlockStamp) (*btcAddress, error) {
 	// Attempt to get address hash of next chained address.
 	nextAPKH, ok := s.chainIdxMap[s.highestUsed+1]
 	if !ok {
@@ -1119,7 +1119,7 @@ func (s *Store) extendUnlocked(bs *BlockStamp) error {
 	if err != nil {
 		return err
 	}
-	newAddr, err := newBtcAddress(s, privkey, nil, bs, true)
+	newAddr, err := newOmcAddress(s, privkey, nil, bs, true)
 	if err != nil {
 		return err
 	}
@@ -1161,7 +1161,7 @@ func (s *Store) extendLocked(bs *BlockStamp) error {
 	if err != nil {
 		return err
 	}
-	newaddr, err := newBtcAddressWithoutPrivkey(s, nextPubkey, nil, bs)
+	newaddr, err := newOmcAddressWithoutPrivkey(s, nextPubkey, nil, bs)
 	if err != nil {
 		return err
 	}
@@ -1417,7 +1417,7 @@ func (s *Store) ImportPrivateKey(wif *btcutil.WIF, bs *BlockStamp) (btcutil.Addr
 
 	// Create new address with this private key.
 	privKey := wif.PrivKey.Serialize()
-	btcaddr, err := newBtcAddress(s, privKey, nil, bs, wif.CompressPubKey)
+	btcaddr, err := newOmcAddress(s, privKey, nil, bs, wif.CompressPubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -2135,15 +2135,15 @@ type PubKeyAddress interface {
 	ExportPrivKey() (*btcutil.WIF, error)
 }
 
-// newBtcAddress initializes and returns a new address.  privkey must
+// newOmcAddress initializes and returns a new address.  privkey must
 // be 32 bytes.  iv must be 16 bytes, or nil (in which case it is
 // randomly generated).
-func newBtcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed bool) (addr *btcAddress, err error) {
+func newOmcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed bool) (addr *btcAddress, err error) {
 	if len(privkey) != 32 {
 		return nil, errors.New("private key is not 32 bytes")
 	}
 
-	addr, err = newBtcAddressWithoutPrivkey(wallet,
+	addr, err = newOmcAddressWithoutPrivkey(wallet,
 		pubkeyFromPrivkey(privkey, compressed), iv, bs)
 	if err != nil {
 		return nil, err
@@ -2156,11 +2156,11 @@ func newBtcAddress(wallet *Store, privkey, iv []byte, bs *BlockStamp, compressed
 	return addr, nil
 }
 
-// newBtcAddressWithoutPrivkey initializes and returns a new address with an
+// newOmcAddressWithoutPrivkey initializes and returns a new address with an
 // unknown (at the time) private key that must be found later.  pubkey must be
 // 33 or 65 bytes, and iv must be 16 bytes or empty (in which case it is
 // randomly generated).
-func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (addr *btcAddress, err error) {
+func newOmcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (addr *btcAddress, err error) {
 	var compressed bool
 	switch n := len(pubkey); n {
 	case btcec.PubKeyBytesLenCompressed:
@@ -2210,10 +2210,10 @@ func newBtcAddressWithoutPrivkey(s *Store, pubkey, iv []byte, bs *BlockStamp) (a
 	return addr, nil
 }
 
-// newRootBtcAddress generates a new address, also setting the
+// newRootOmcAddress generates a new address, also setting the
 // chaincode and chain index to represent this address as a root
 // address.
-func newRootBtcAddress(s *Store, privKey, iv, chaincode []byte,
+func newRootOmcAddress(s *Store, privKey, iv, chaincode []byte,
 	bs *BlockStamp) (addr *btcAddress, err error) {
 
 	if len(chaincode) != 32 {
@@ -2222,7 +2222,7 @@ func newRootBtcAddress(s *Store, privKey, iv, chaincode []byte,
 
 	// Create new btcAddress with provided inputs.  This will
 	// always use a compressed pubkey.
-	addr, err = newBtcAddress(s, privKey, iv, bs, true)
+	addr, err = newOmcAddress(s, privKey, iv, bs, true)
 	if err != nil {
 		return nil, err
 	}

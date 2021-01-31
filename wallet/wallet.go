@@ -1913,6 +1913,9 @@ func listTransactions(tx walletdb.ReadTx, details *wtxmgr.TxDetails, addrMgr *wa
 		}
 		var outputTotal btcutil.Amount
 		for _, output := range details.MsgTx.TxOut {
+			if output.IsSeparator() {
+				continue
+			}
 			if output.TokenType == 0 {
 				outputTotal += btcutil.Amount(output.Value.(*token.NumToken).Val)
 			}
@@ -1920,11 +1923,14 @@ func listTransactions(tx walletdb.ReadTx, details *wtxmgr.TxDetails, addrMgr *wa
 		// Note: The actual fee is debitTotal - outputTotal.  However,
 		// this RPC reports negative numbers for fees, so the inverse
 		// is calculated.
-		feeF64 = (outputTotal - debitTotal).ToBTC()
+		feeF64 = (outputTotal - debitTotal).ToOMC()
 	}
 
 outputs:
 	for i, output := range details.MsgTx.TxOut {
+		if output.IsSeparator() {
+			continue
+		}
 		// Determine if this output is a credit, and if so, determine
 		// its spentness.
 		var isCredit bool
@@ -1961,7 +1967,7 @@ outputs:
 		hash := ""
 
 		if output.Value.IsNumeric() {
-			amountF64 = btcutil.Amount(output.Value.(*token.NumToken).Val).ToBTC()
+			amountF64 = btcutil.Amount(output.Value.(*token.NumToken).Val).ToOMC()
 		} else {
 			hash = output.Value.(*token.HashToken).Hash.String()
 		}
@@ -2619,10 +2625,11 @@ func (w *Wallet) ListUnspent(minconf, maxconf int32,
 			// private key (currently it only checks whether the pubkey
 			// exists, since the private key is required at the moment).
 			var spendable bool
-		scSwitch:
+//		scSwitch:
 			switch sc {
-			case txsparser.PubKeyHashTy:
+			case txsparser.PubKeyHashTy, txsparser.MultiSigTy:
 				spendable = true
+/*
 			case txsparser.MultiSigTy:
 				for _, a := range addrs {
 					_, err := w.Manager.Address(addrmgrNs, a)
@@ -2635,6 +2642,7 @@ func (w *Wallet) ListUnspent(minconf, maxconf int32,
 					return err
 				}
 				spendable = true
+ */
 			}
 
 			result := &btcjson.ListUnspentResult{
@@ -3240,48 +3248,22 @@ type SignatureError struct {
 func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 	additionalPrevScripts map[wire.OutPoint][]byte,
 	additionalKeysByAddress map[string]*btcutil.WIF,
-	p2shRedeemScriptsByAddress map[string][]byte) ([]SignatureError, error) {
+	redeemScriptsByAddress map[string][]byte) ([]SignatureError, error) {
 
 	ctx := ovm.Context{}
 	ctx.GetCoinBase = func() *btcutil.Tx { return nil }
 	ctx.GetTx = func() *btcutil.Tx { return btcutil.NewTx(tx) }
 	ctx.AddTxOutput = func(t wire.TxOut) int { return -1 }
-	ctx.AddRight = func(t token.Definition) chainhash.Hash { return chainhash.Hash{} }
+	ctx.AddRight = func(t token.Definition, b bool) chainhash.Hash { return chainhash.Hash{} }
 	ctx.GetUtxo = func(hash chainhash.Hash, seq uint64) *wire.TxOut { return nil }
 	ctx.BlockNumber = func() uint64 { return 0 }
 	ctx.BlockTime = func() uint32 { return 0 }
-	ctx.Block = func() *btcutil.Block { return nil }
 
 	svm := ovm.NewSigVM(w.chainParams)
 	svm.SetContext(ctx)
 	intp := svm.Interpreter()
 
 	signed := make(map[uint32]struct{})
-/*
-	var textmode []byte
-	if hashType == txscript.SigHashAll {
-		textmode = []byte{1}
-	} else if hashType == txscript.SigHashSingle {
-		textmode = []byte{0}
-	} else if hashType == txscript.SigHashAll  | txscript.SigHashAnyOneCanPay {
-		textmode = []byte{2}
-	} else if hashType == txscript.SigHashSingle  | txscript.SigHashAnyOneCanPay {
-		textmode = []byte{3}	// need to add index when met
-	}
- */
-/*
-	switch hashType {
-	case "ALL":
-	case "NONE":
-		hashType = txscript.SigHashNone
-	case "SINGLE":
-	case "NONE|ANYONECANPAY":
-		hashType = txscript.SigHashNone | txscript.SigHashAnyOneCanPay
-	default:
-		e := errors.New("Invalid sighash parameter")
-		return nil, InvalidParameterError{e}
-	}
- */
 
 	var signErrors []SignatureError
 	err := walletdb.View(w.db, func(dbtx walletdb.ReadTx) error {
@@ -3292,20 +3274,30 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 			if _,ok := signed[txIn.SignatureIndex]; ok {
 				continue
 			}
+
+			prevHash := &txIn.PreviousOutPoint.Hash
+			prevIndex := txIn.PreviousOutPoint.Index
+			txDetails, err := w.TxStore.TxDetails(txmgrNs, prevHash)
 			prevOutScript, ok := additionalPrevScripts[txIn.PreviousOutPoint]
-			if !ok {
-				prevHash := &txIn.PreviousOutPoint.Hash
-				prevIndex := txIn.PreviousOutPoint.Index
-				txDetails, err := w.TxStore.TxDetails(txmgrNs, prevHash)
-				if err != nil {
-					return fmt.Errorf("cannot query previous transaction "+
-						"details for %v: %v", txIn.PreviousOutPoint, err)
+
+			if err != nil || txDetails == nil {
+				if !ok {
+					if err != nil {
+						return fmt.Errorf("cannot query previous transaction "+
+						"details for %s: %v", txIn.PreviousOutPoint.String(), err)
+					} else {	// txDetails == nil
+						return fmt.Errorf("%s not found", txIn.PreviousOutPoint.String())
+					}
 				}
-				if txDetails == nil {
-					return fmt.Errorf("%v not found",
-						txIn.PreviousOutPoint)
+			} else {
+				tmp := txDetails.MsgTx.TxOut[prevIndex].PkScript
+				if txsparser.IsMultiSig(tmp) {
+					if !ok || prevOutScript[0] != w.chainParams.MultiSigAddrID {
+						return fmt.Errorf("Outpoint %s refers a multisig hash script, which requires a script", txIn.PreviousOutPoint.String())
+					}
+ 				} else if !ok {
+					prevOutScript = tmp
 				}
-				prevOutScript = txDetails.MsgTx.TxOut[prevIndex].PkScript
 			}
 
 			// Set up our callbacks that we pass to txscript so it can
@@ -3342,14 +3334,13 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 			getScript := txscript.ScriptClosure(func(addr btcutil.Address) ([]byte, error) {
 				// If keys were provided then we can only use the
 				// redeem scripts provided with our inputs, too.
-				if len(additionalKeysByAddress) != 0 {
+//				if len(additionalKeysByAddress) != 0 {
 					addrStr := addr.EncodeAddress()
-					script, ok := p2shRedeemScriptsByAddress[addrStr]
-					if !ok {
-						return nil, errors.New("no script for address")
+					script, ok := redeemScriptsByAddress[addrStr]
+					if ok {
+						return script, nil
 					}
-					return script, nil
-				}
+//				}
 				address, err := w.Manager.Address(addrmgrNs, addr)
 				if err != nil {
 					return nil, err
@@ -3461,6 +3452,9 @@ func (w *Wallet) reliablyPublishTransaction(tx *wire.MsgTx) (*chainhash.Hash, er
 	// TODO(wilmer): import script as external if the address does not
 	// belong to the wallet to handle confs during restarts?
 	for _, txOut := range tx.TxOut {
+		if txOut.IsSeparator() {
+			continue
+		}
 		_, addrs, _, err := txscript.ExtractPkScriptAddrs(
 			txOut.PkScript, w.chainParams,
 		)

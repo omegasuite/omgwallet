@@ -1252,11 +1252,21 @@ func (c *BitcoindClient) filterTx(tx *wire.MsgTx,
 	// If we've already seen this transaction and it's now been confirmed,
 	// then we'll shortcut the filter process by immediately sending a
 	// notification to the caller that the filter matches.
+	// we do this only if the tx does not have contract call, for contracts
+	// may alter tx.
 	if _, ok := c.mempool[tx.TxHash()]; ok {
-		if notify && blockDetails != nil {
-			c.onRelevantTx(rec, blockDetails)
+		hascontract := false
+		for _,txo := range rec.MsgTx.TxOut {
+			if txo.IsSeparator() || txo.PkScript[0] == 0x88 {
+				hascontract = true
+			}
 		}
-		return true, rec, nil
+		if !hascontract {
+			if notify && blockDetails != nil {
+				c.onRelevantTx(rec, blockDetails)
+			}
+			return true, rec, nil
+		}
 	}
 
 	// Otherwise, this is a new transaction we have yet to see. We'll need
@@ -1302,6 +1312,9 @@ func (c *BitcoindClient) filterTx(tx *wire.MsgTx,
 	// any of the currently watched addresses. If an output matches, we'll
 	// add it to our watch list.
 	for i, txOut := range tx.TxOut {
+		if txOut.IsSeparator() {
+			continue
+		}
 		addrs, _, err := indexers.ExtractPkScriptAddrs(
 			txOut.PkScript, c.chainParams,
 		)

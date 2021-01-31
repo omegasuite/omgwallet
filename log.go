@@ -18,7 +18,7 @@ import (
 	"github.com/omegasuite/omgwallet/wallet"
 	"github.com/omegasuite/omgwallet/wtxmgr"
 	"github.com/jrick/logrotate/rotator"
-	"github.com/lightninglabs/neutrino"
+	"github.com/omegasuite/neutrino"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
