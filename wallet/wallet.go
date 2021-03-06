@@ -3378,8 +3378,11 @@ func (w *Wallet) SignTransaction(tx *wire.MsgTx, hashType txscript.SigHashType,
 					})
 					continue
 				}
-				tx.SignatureScripts[txIn.SignatureIndex] = script
 				signed[txIn.SignatureIndex] = struct{}{}
+				if len(script) == 0 {
+					continue
+				}
+				tx.SignatureScripts[txIn.SignatureIndex] = script
 			}
 
 			pkScript := make([]byte, len(prevOutScript) - 1)
